@@ -1,28 +1,36 @@
 import { db } from "../firebase/firestore.js";
-import { randomUUID } from "crypto";
+import { publishProcessingJob } from "../pubsub/publisher.js";
+import crypto from "crypto";
 
-export async function handleWhatsappWebhook(req: any) {
-    const traceId = randomUUID();
+export async function handleWhatsappWebhook(payload: any) {
+  const traceId = crypto.randomUUID();
 
-    // 1️⃣ Log bruto do webhook
-    const webhookLogRef = await db.collection("webhook_logs").add({
-        traceId,
-        headers: req.headers,
-        payload: req.body,
-        receivedAt: new Date(),
-    });
+  const phoneNumber = payload.from;
+  if (!phoneNumber) {
+    throw new Error("Payload inválido: phoneNumber ausente");
+  }
 
-    // 2️⃣ Cria job de processamento
-    await db.collection("processing_jobs").add({
-        traceId,
-        status: "pending",
-        webhookLogRef: webhookLogRef.path,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-    });
+  // 1️⃣ Log do webhook
+  await db.collection("webhook_logs").add({
+    payload,
+    traceId,
+    createdAt: new Date(),
+  });
 
-    return {
-        ok: true,
-        traceId,
-    };
+  // 2️⃣ Cria job COM phoneNumber
+  const jobRef = await db.collection("processing_jobs").add({
+    traceId,
+    phoneNumber,
+    status: "pending",
+    attempts: 0,
+    createdAt: new Date(),
+  });
+
+  // 3️⃣ Publica no Pub/Sub (payload mínimo)
+  await publishProcessingJob({
+    jobId: jobRef.id,
+    traceId,
+  });
+
+  return { ok: true };
 }

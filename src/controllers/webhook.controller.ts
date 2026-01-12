@@ -1,15 +1,12 @@
 import { Request, Response } from "express";
 import { handleWhatsappWebhook } from "../services/webhook.service.js";
 
-export async function whatsappWebhook(
-    req: Request,
-    res: Response
-) {
-    try {
-        const result = await handleWhatsappWebhook(req);
-        return res.status(200).json(result);
-    } catch (error) {
-        console.error("Webhook error:", error);
-        return res.status(500).json({ ok: false });
-    }
+export async function whatsappWebhook(req: Request, res: Response) {
+  try {
+    const result = await handleWhatsappWebhook(req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false });
+  }
 }

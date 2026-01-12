@@ -6,20 +6,22 @@
     "main": "dist/server.js",
     "type": "module",
     "scripts": {
-        "dev": "tsx watch src/server.ts",
         "build": "tsc",
-        "start": "node dist/worker/index.js"
+        "start:webhook": "node dist/server.js",
+        "start:worker": "node dist/worker/index.js"
     },
     "engines": {
         "node": ">=20"
     },
     "dependencies": {
+        "@google-cloud/pubsub": "^5.2.1",
         "express": "^4.19.2",
         "firebase-admin": "^12.0.0"
     },
     "devDependencies": {
         "@types/express": "^4.17.21",
         "@types/node": "^20.11.17",
+        "node-fetch": "^3.3.2",
         "tsx": "^4.7.0",
         "typescript": "^5.4.5"
     }
