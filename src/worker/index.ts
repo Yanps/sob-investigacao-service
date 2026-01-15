@@ -2,6 +2,7 @@ import express from "express";
 import { db } from "../firebase/firestore.js";
 import { MAX_ATTEMPTS } from "../config/retry.config.js";
 import { sendWhatsAppMessage } from "../services/whatsapp.service.js";
+import { generateAIResponse } from "../services/ai.service.js";
 
 const app = express();
 app.use(express.json());
@@ -20,13 +21,6 @@ app.post("/", async (req, res) => {
       Buffer.from(message.data, "base64").toString()
     );
 
-    console.log("📨 Decoded payload:", payload);
-    console.log("DEBUG ENV", {
-      hasToken: !!process.env.WHATSAPP_API_TOKEN,
-      tokenLength: process.env.WHATSAPP_API_TOKEN?.length,
-      phoneId: process.env.WHATSAPP_PHONE_NUMBER_ID,
-      apiUrl: process.env.WHATSAPP_API_URL,
-    });
 
     const { jobId, traceId } = payload;
     if (!jobId) return res.status(204).end();
@@ -60,7 +54,10 @@ app.post("/", async (req, res) => {
     });
 
     try {
-      const responseText = "Mensagem processada com sucesso 🚀";
+      const responseText = await generateAIResponse({
+        phoneNumber,
+        text: jobData.text,
+      });
 
       await sendWhatsAppMessage({
         to: phoneNumber,
@@ -70,8 +67,10 @@ app.post("/", async (req, res) => {
       await db.collection("agent_responses").add({
         traceId,
         phoneNumber,
+        question: jobData.text,
         response: { text: responseText },
         createdAt: new Date(),
+        source: "vertex-ai",
       });
 
       await jobRef.update({
