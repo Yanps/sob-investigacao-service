@@ -34,7 +34,9 @@ export async function findOrCreateConversation(
   );
 
   // Busca conversa ativa para o telefone
-  // NOTA: Requer índice composto no Firestore: phoneNumber (ASC), status (ASC), lastMessageAt (DESC)
+  // ⚠️ NOTA: Requer índice composto no Firestore
+  // Campos: phoneNumber (ASC), status (ASC), lastMessageAt (DESC)
+  // O Firestore mostrará um link para criar o índice automaticamente na primeira execução
   const activeConversations = await db
     .collection("conversations")
     .where("phoneNumber", "==", phoneNumber)

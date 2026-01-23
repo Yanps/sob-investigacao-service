@@ -13,50 +13,65 @@ const auth = new GoogleAuth({
 });
 
 /**
- * Cria uma sessão no Vertex AI
+ * Cria uma sessão no Vertex AI (se suportado pela API)
+ * Nota: A API pode não suportar criação explícita. Se retornar erro 400,
+ * a sessão será criada automaticamente na primeira chamada.
  * @param userId Identificador do usuário (phoneNumber)
- * @returns O ID da sessão extraído do nome retornado
+ * @returns O ID da sessão ou null se não suportado
  */
 export async function createVertexAISession(
   userId: string
-): Promise<string> {
-  const client = await auth.getClient();
-  const accessToken = await client.getAccessToken();
+): Promise<string | null> {
+  try {
+    const client = await auth.getClient();
+    const accessToken = await client.getAccessToken();
 
-  if (!accessToken.token) {
-    throw new Error("Não foi possível obter access token");
-  }
-
-  const body = {
-    context: {
-      user_id: userId,
-    },
-  };
-
-  const response = await axios.post(
-    `${apiEndpoint}/v1/${agentEngineName}/sessions`,
-    body,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken.token}`,
-        "Content-Type": "application/json",
-      },
+    if (!accessToken.token) {
+      throw new Error("Não foi possível obter access token");
     }
-  );
 
-  // Extrai o session_id do nome retornado
-  // Formato: "projects/.../locations/.../reasoningEngines/.../sessions/SESSION_ID"
-  const sessionName = response.data.name;
-  if (!sessionName) {
-    throw new Error("Resposta do Vertex AI não contém nome da sessão");
+    const body = {
+      context: {
+        user_id: userId,
+      },
+    };
+
+    const response = await axios.post(
+      `${apiEndpoint}/v1/${agentEngineName}/sessions`,
+      body,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    // Extrai o session_id do nome retornado
+    // Formato: "projects/.../locations/.../reasoningEngines/.../sessions/SESSION_ID"
+    const sessionName = response.data.name;
+    if (!sessionName) {
+      return null;
+    }
+
+    const sessionIdMatch = sessionName.match(/\/sessions\/([^\/]+)$/);
+    if (!sessionIdMatch) {
+      return null;
+    }
+
+    return sessionIdMatch[1];
+  } catch (error: any) {
+    // Se a API não suporta criação explícita (erro 400), retorna null
+    // A sessão será criada automaticamente na primeira chamada
+    if (error.response?.status === 400 || error.response?.status === 404) {
+      console.warn(
+        "⚠️ Criação explícita de sessão não suportada. A sessão será criada automaticamente."
+      );
+      return null;
+    }
+    // Re-throw outros erros
+    throw error;
   }
-
-  const sessionIdMatch = sessionName.match(/\/sessions\/([^\/]+)$/);
-  if (!sessionIdMatch) {
-    throw new Error(`Formato de nome de sessão inválido: ${sessionName}`);
-  }
-
-  return sessionIdMatch[1];
 }
 
 export async function generateAIResponse({

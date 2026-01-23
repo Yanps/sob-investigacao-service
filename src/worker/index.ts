@@ -80,26 +80,34 @@ app.post("/", async (req, res) => {
     });
 
     try {
-      // 💬 Cria sessão se necessário (lazy creation)
+      // 💬 Tenta criar sessão se necessário (lazy creation)
+      // Nota: Se a API não suportar criação explícita, a sessão será criada
+      // automaticamente na primeira chamada e capturada na resposta
       if (!sessionId && conversationId) {
-        sessionId = await createVertexAISession(phoneNumber);
-        await updateConversationSessionId(conversationId, sessionId);
-        // Atualiza o job com o sessionId criado
-        await jobRef.update({ sessionId });
+        const createdSessionId = await createVertexAISession(phoneNumber);
+        if (createdSessionId) {
+          sessionId = createdSessionId;
+          await updateConversationSessionId(conversationId, sessionId);
+          await jobRef.update({ sessionId });
+        }
+        // Se createdSessionId for null, continuamos sem sessionId
+        // A sessão será criada automaticamente na chamada abaixo
       }
 
-      // 🤖 Gera resposta da IA com sessionId
+      // 🤖 Gera resposta da IA com sessionId (ou sem, se não disponível)
       const aiResult = await generateAIResponse({
         phoneNumber,
         text: jobData.text,
         sessionId,
       });
 
-      // 📝 Atualiza sessionId se retornado na resposta
-      if (aiResult.sessionId && aiResult.sessionId !== sessionId) {
-        sessionId = aiResult.sessionId;
-        await updateConversationSessionId(conversationId, sessionId);
-        await jobRef.update({ sessionId });
+      // 📝 Atualiza sessionId se retornado na resposta (criado automaticamente)
+      if (aiResult.sessionId) {
+        if (!sessionId || aiResult.sessionId !== sessionId) {
+          sessionId = aiResult.sessionId;
+          await updateConversationSessionId(conversationId, sessionId);
+          await jobRef.update({ sessionId });
+        }
       }
 
       const responseText = aiResult.response;
