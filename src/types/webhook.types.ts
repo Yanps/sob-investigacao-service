@@ -11,4 +11,7 @@ export interface ProcessingJob {
     webhookLogRef: string;
     createdAt: Date;
     updatedAt: Date;
+    conversationId?: string;
+    agentPhoneNumberId?: string;
+    sessionId?: string | null;
 }

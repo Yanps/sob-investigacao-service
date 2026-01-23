@@ -2,7 +2,15 @@ import express from "express";
 import { db } from "../firebase/firestore.js";
 import { MAX_ATTEMPTS } from "../config/retry.config.js";
 import { sendWhatsAppMessage } from "../services/whatsapp.service.js";
-import { generateAIResponse } from "../services/ai.service.js";
+import {
+  generateAIResponse,
+  createVertexAISession,
+} from "../services/ai.service.js";
+import {
+  findOrCreateConversation,
+  updateConversationSessionId,
+  updateConversationLastMessage,
+} from "../services/conversation.service.js";
 
 const app = express();
 app.use(express.json());
@@ -41,9 +49,27 @@ app.post("/", async (req, res) => {
 
     const attempts = jobData.attempts ?? 0;
     const phoneNumber = jobData.phoneNumber;
+    let conversationId = jobData.conversationId;
+    let sessionId = jobData.sessionId || null;
 
     if (!phoneNumber) {
       throw new Error("phoneNumber ausente no job");
+    }
+
+    // 🔄 Retrocompatibilidade: cria conversa se não existir no job
+    if (!conversationId) {
+      console.log("⚠️ Job antigo sem conversationId, criando conversa...");
+      const conversation = await findOrCreateConversation(phoneNumber);
+      conversationId = conversation.conversationId;
+      sessionId = conversation.adkSessionId || sessionId;
+      
+      // Atualiza o job com conversationId para futuras execuções
+      await jobRef.update({
+        conversationId,
+        agentPhoneNumberId: conversation.agentPhoneNumberId,
+        sessionId: sessionId || null,
+      });
+      console.log("✅ Conversa criada retroativamente:", conversationId);
     }
 
     // 🔒 LOCK
@@ -54,10 +80,29 @@ app.post("/", async (req, res) => {
     });
 
     try {
-      const responseText = await generateAIResponse({
+      // 💬 Cria sessão se necessário (lazy creation)
+      if (!sessionId && conversationId) {
+        sessionId = await createVertexAISession(phoneNumber);
+        await updateConversationSessionId(conversationId, sessionId);
+        // Atualiza o job com o sessionId criado
+        await jobRef.update({ sessionId });
+      }
+
+      // 🤖 Gera resposta da IA com sessionId
+      const aiResult = await generateAIResponse({
         phoneNumber,
         text: jobData.text,
+        sessionId,
       });
+
+      // 📝 Atualiza sessionId se retornado na resposta
+      if (aiResult.sessionId && aiResult.sessionId !== sessionId) {
+        sessionId = aiResult.sessionId;
+        await updateConversationSessionId(conversationId, sessionId);
+        await jobRef.update({ sessionId });
+      }
+
+      const responseText = aiResult.response;
 
       await sendWhatsAppMessage({
         to: phoneNumber,
@@ -73,9 +118,13 @@ app.post("/", async (req, res) => {
         source: "vertex-ai",
       });
 
+      // 📅 Atualiza timestamp da última mensagem da conversa
+      await updateConversationLastMessage(conversationId);
+
       await jobRef.update({
         status: "done",
         finishedAt: new Date(),
+        sessionId, // Salva sessionId atualizado
       });
 
       console.log("✅ Job finalizado:", jobId);

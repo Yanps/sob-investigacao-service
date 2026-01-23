@@ -1,5 +1,6 @@
 import { db } from "../firebase/firestore.js";
 import { publishProcessingJob } from "../pubsub/publisher.js";
+import { findOrCreateConversation } from "./conversation.service.js";
 import crypto from "crypto";
 export async function handleWhatsappWebhook(payload) {
     const traceId = crypto.randomUUID();
@@ -33,6 +34,10 @@ export async function handleWhatsappWebhook(payload) {
         createdAt: new Date(),
     });
     /**
+     * 💬 Busca ou cria conversa ativa
+     */
+    const conversation = await findOrCreateConversation(phoneNumber);
+    /**
      * 🧠 Cria job de processamento
      */
     const jobRef = await db.collection("processing_jobs").add({
@@ -40,6 +45,9 @@ export async function handleWhatsappWebhook(payload) {
         phoneNumber,
         messageId,
         text,
+        conversationId: conversation.conversationId,
+        agentPhoneNumberId: conversation.agentPhoneNumberId,
+        sessionId: conversation.adkSessionId,
         status: "pending",
         attempts: 0,
         createdAt: new Date(),
