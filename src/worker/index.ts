@@ -5,6 +5,7 @@ import { sendWhatsAppMessage } from "../services/whatsapp.service.js";
 import {
   generateAIResponse,
   createVertexAISession,
+  getUserEmail,
 } from "../services/ai.service.js";
 import {
   findOrCreateConversation,
@@ -80,11 +81,17 @@ app.post("/", async (req, res) => {
     });
 
     try {
+      // 📧 Busca email do usuário
+      const userEmail = await getUserEmail(phoneNumber);
+
       // 💬 Tenta criar sessão se necessário (lazy creation)
       // Nota: Se a API não suportar criação explícita, a sessão será criada
       // automaticamente na primeira chamada e capturada na resposta
       if (!sessionId && conversationId) {
-        const createdSessionId = await createVertexAISession(phoneNumber);
+        const createdSessionId = await createVertexAISession(
+          phoneNumber,
+          userEmail
+        );
         if (createdSessionId) {
           sessionId = createdSessionId;
           await updateConversationSessionId(conversationId, sessionId);
@@ -99,6 +106,7 @@ app.post("/", async (req, res) => {
         phoneNumber,
         text: jobData.text,
         sessionId,
+        email: userEmail,
       });
 
       // 📝 Atualiza sessionId se retornado na resposta (criado automaticamente)

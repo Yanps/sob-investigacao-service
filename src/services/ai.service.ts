@@ -1,5 +1,6 @@
 import axios from "axios";
 import { GoogleAuth } from "google-auth-library";
+import { db } from "../firebase/firestore.js";
 
 const projectNumber = process.env.VERTEX_AI_PROJECT_NUMBER!;
 const location = process.env.VERTEX_AI_LOCATION!;
@@ -13,14 +14,60 @@ const auth = new GoogleAuth({
 });
 
 /**
+ * Busca o email do usuário na coleção orders
+ * @param phoneNumber Número de telefone do usuário
+ * @returns Email do usuário ou null se não encontrado
+ */
+export async function getUserEmail(
+  phoneNumber: string
+): Promise<string | null> {
+  try {
+    // Busca na coleção orders por phoneNumber ou phoneNumberAlt
+    const ordersSnapshot = await db
+      .collection("orders")
+      .where("phoneNumber", "==", phoneNumber)
+      .limit(1)
+      .get();
+
+    if (!ordersSnapshot.empty) {
+      const orderData = ordersSnapshot.docs[0].data();
+      if (orderData.email) {
+        return orderData.email;
+      }
+    }
+
+    // Se não encontrou, tenta buscar por phoneNumberAlt
+    const ordersAltSnapshot = await db
+      .collection("orders")
+      .where("phoneNumberAlt", "==", phoneNumber)
+      .limit(1)
+      .get();
+
+    if (!ordersAltSnapshot.empty) {
+      const orderData = ordersAltSnapshot.docs[0].data();
+      if (orderData.email) {
+        return orderData.email;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Erro ao buscar email do usuário:", error);
+    return null;
+  }
+}
+
+/**
  * Cria uma sessão no Vertex AI (se suportado pela API)
  * Nota: A API pode não suportar criação explícita. Se retornar erro 400,
  * a sessão será criada automaticamente na primeira chamada.
  * @param userId Identificador do usuário (phoneNumber)
+ * @param email Email do usuário (opcional)
  * @returns O ID da sessão ou null se não suportado
  */
 export async function createVertexAISession(
-  userId: string
+  userId: string,
+  email?: string | null
 ): Promise<string | null> {
   try {
     const client = await auth.getClient();
@@ -30,11 +77,16 @@ export async function createVertexAISession(
       throw new Error("Não foi possível obter access token");
     }
 
-    const body = {
+    const body: any = {
       context: {
         user_id: userId,
       },
     };
+
+    // Adiciona email ao context se disponível
+    if (email) {
+      body.context.email = email;
+    }
 
     const response = await axios.post(
       `${apiEndpoint}/v1/${agentEngineName}/sessions`,
@@ -78,10 +130,12 @@ export async function generateAIResponse({
   phoneNumber,
   text,
   sessionId,
+  email,
 }: {
   phoneNumber: string;
   text: string;
   sessionId?: string | null;
+  email?: string | null;
 }): Promise<{ response: string; sessionId?: string }> {
   // 1️⃣ Token
   const client = await auth.getClient();
@@ -99,6 +153,11 @@ export async function generateAIResponse({
       message: text,
     },
   };
+
+  // Adiciona email ao input se disponível
+  if (email) {
+    body.input.email = email;
+  }
 
   // 3️⃣ URL baseada na existência de sessionId
   const url = sessionId
