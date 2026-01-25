@@ -71,6 +71,14 @@ app.post("/", async (req, res) => {
         sessionId: sessionId || null,
       });
       console.log("✅ Conversa criada retroativamente:", conversationId);
+    } else {
+      // 🔍 Sempre busca sessionId atualizado da conversa (fonte da verdade)
+      const conversationDoc = await db.collection("conversations").doc(conversationId).get();
+      if (conversationDoc.exists) {
+        const conversationData = conversationDoc.data();
+        sessionId = conversationData?.adkSessionId || sessionId;
+        console.log("📋 SessionId recuperado da conversa:", sessionId);
+      }
     }
 
     // 🔒 LOCK

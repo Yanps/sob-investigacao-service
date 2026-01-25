@@ -59,14 +59,15 @@ export async function getUserEmail(
 
 /**
  * Cria uma sessão no Vertex AI (se suportado pela API)
+ * Segue o padrão do exemplo Python: user_id formatado como {phoneNumber}|{phoneNumber}
  * Nota: A API pode não suportar criação explícita. Se retornar erro 400,
  * a sessão será criada automaticamente na primeira chamada.
- * @param userId Identificador do usuário (phoneNumber)
+ * @param phoneNumber Número de telefone do usuário
  * @param email Email do usuário (opcional)
  * @returns O ID da sessão ou null se não suportado
  */
 export async function createVertexAISession(
-  userId: string,
+  phoneNumber: string,
   email?: string | null
 ): Promise<string | null> {
   try {
@@ -77,13 +78,19 @@ export async function createVertexAISession(
       throw new Error("Não foi possível obter access token");
     }
 
+    // Formata user_id como {phoneNumber}|{phoneNumber} seguindo padrão Python
+    const userId = `${phoneNumber}|${phoneNumber}`;
+
     const body: any = {
       context: {
         user_id: userId,
       },
     };
 
-    // Adiciona email ao context se disponível
+    // Adiciona user_phone e email ao context explicitamente
+    if (phoneNumber) {
+      body.context.user_phone = phoneNumber;
+    }
     if (email) {
       body.context.email = email;
     }
@@ -146,15 +153,21 @@ export async function generateAIResponse({
   }
 
   // 2️⃣ Request body NO FORMATO OFICIAL
+  // Formata user_id como {phoneNumber}|{phoneNumber} seguindo padrão Python
+  const userId = `${phoneNumber}|${phoneNumber}`;
+
   const body: any = {
     classMethod: "stream_query",
     input: {
-      user_id: phoneNumber,
+      user_id: userId,
       message: text,
     },
   };
 
-  // Adiciona email ao input se disponível
+  // Adiciona user_phone e email ao input explicitamente
+  if (phoneNumber) {
+    body.input.user_phone = phoneNumber;
+  }
   if (email) {
     body.input.email = email;
   }
