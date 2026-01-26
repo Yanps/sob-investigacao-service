@@ -6,23 +6,26 @@ const projectNumber = process.env.VERTEX_AI_PROJECT_NUMBER!;
 const location = process.env.VERTEX_AI_LOCATION!;
 const agentEngineId = process.env.VERTEX_AI_AGENT_ENGINE_ID!;
 
-const agentEngineName = `projects/${projectNumber}/locations/${location}/reasoningEngines/${agentEngineId}`;
+const reasoningEngineId = `projects/${projectNumber}/locations/${location}/reasoningEngines/${agentEngineId}`;
 const apiEndpoint = `https://${location}-aiplatform.googleapis.com`;
 
 const auth = new GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/cloud-platform"],
 });
 
-/**
- * Busca o email do usuário na coleção orders
- * @param phoneNumber Número de telefone do usuário
- * @returns Email do usuário ou null se não encontrado
- */
+async function getAccessToken(): Promise<string> {
+  const client = await auth.getClient();
+  const accessToken = await client.getAccessToken();
+  if (!accessToken.token) {
+    throw new Error("Não foi possível obter access token");
+  }
+  return accessToken.token;
+}
+
 export async function getUserEmail(
   phoneNumber: string
 ): Promise<string | null> {
   try {
-    // Busca na coleção orders por phoneNumber ou phoneNumberAlt
     const ordersSnapshot = await db
       .collection("orders")
       .where("phoneNumber", "==", phoneNumber)
@@ -36,7 +39,6 @@ export async function getUserEmail(
       }
     }
 
-    // Se não encontrou, tenta buscar por phoneNumberAlt
     const ordersAltSnapshot = await db
       .collection("orders")
       .where("phoneNumberAlt", "==", phoneNumber)
@@ -57,141 +59,120 @@ export async function getUserEmail(
   }
 }
 
-/**
- * Cria uma sessão no Vertex AI (se suportado pela API)
- * Segue o padrão do exemplo Python: user_id formatado como {phoneNumber}|{phoneNumber}
- * Nota: A API pode não suportar criação explícita. Se retornar erro 400,
- * a sessão será criada automaticamente na primeira chamada.
- * @param phoneNumber Número de telefone do usuário
- * @param email Email do usuário (opcional)
- * @returns O ID da sessão ou null se não suportado
- */
+export async function getUserName(phoneNumber: string): Promise<string> {
+  try {
+    const ordersSnapshot = await db
+      .collection("orders")
+      .where("phoneNumber", "==", phoneNumber)
+      .limit(1)
+      .get();
+
+    if (!ordersSnapshot.empty) {
+      const orderData = ordersSnapshot.docs[0].data();
+      if (orderData.name) {
+        return orderData.name.split(" ")[0];
+      }
+    }
+
+    const ordersAltSnapshot = await db
+      .collection("orders")
+      .where("phoneNumberAlt", "==", phoneNumber)
+      .limit(1)
+      .get();
+
+    if (!ordersAltSnapshot.empty) {
+      const orderData = ordersAltSnapshot.docs[0].data();
+      if (orderData.name) {
+        return orderData.name.split(" ")[0];
+      }
+    }
+
+    return phoneNumber;
+  } catch (error) {
+    console.error("Erro ao buscar nome do usuário:", error);
+    return phoneNumber;
+  }
+}
+
 export async function createVertexAISession(
   phoneNumber: string,
-  email?: string | null
-): Promise<string | null> {
-  try {
-    const client = await auth.getClient();
-    const accessToken = await client.getAccessToken();
+  userName?: string | null
+): Promise<string> {
+  const token = await getAccessToken();
 
-    if (!accessToken.token) {
-      throw new Error("Não foi possível obter access token");
-    }
+  const name = userName || phoneNumber;
+  const userId = `${name}|${phoneNumber}`;
 
-    // Formata user_id como {phoneNumber}|{phoneNumber} seguindo padrão Python
-    const userId = `${phoneNumber}|${phoneNumber}`;
-
-    const body: any = {
-      context: {
-        user_id: userId,
+  const response = await axios.post(
+    `${apiEndpoint}/v1/${reasoningEngineId}/sessions`,
+    { userId: userId },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
       },
-    };
-
-    // Adiciona user_phone e email ao context explicitamente
-    if (phoneNumber) {
-      body.context.user_phone = phoneNumber;
     }
-    if (email) {
-      body.context.email = email;
-    }
+  );
 
-    const response = await axios.post(
-      `${apiEndpoint}/v1/${agentEngineName}/sessions`,
-      body,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken.token}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+  let sessionId: string;
 
-    // Extrai o session_id do nome retornado
-    // Formato: "projects/.../locations/.../reasoningEngines/.../sessions/SESSION_ID"
-    const sessionName = response.data.name;
-    if (!sessionName) {
-      return null;
-    }
-
-    const sessionIdMatch = sessionName.match(/\/sessions\/([^\/]+)$/);
-    if (!sessionIdMatch) {
-      return null;
-    }
-
-    return sessionIdMatch[1];
-  } catch (error: any) {
-    // Se a API não suporta criação explícita (erro 400), retorna null
-    // A sessão será criada automaticamente na primeira chamada
-    if (error.response?.status === 400 || error.response?.status === 404) {
-      console.warn(
-        "⚠️ Criação explícita de sessão não suportada. A sessão será criada automaticamente."
+  if (response.data.name) {
+    const match = response.data.name.match(/\/sessions\/(\d+)/);
+    if (match) {
+      sessionId = match[1];
+    } else {
+      throw new Error(
+        `Formato de resposta inesperado: ${response.data.name}`
       );
-      return null;
     }
-    // Re-throw outros erros
-    throw error;
+  } else if (response.data.id) {
+    sessionId = response.data.id;
+  } else {
+    throw new Error("Não foi possível extrair session_id da resposta");
   }
+
+  return sessionId;
 }
 
 export async function generateAIResponse({
   phoneNumber,
   text,
   sessionId,
-  email,
+  userName,
 }: {
   phoneNumber: string;
   text: string;
-  sessionId?: string | null;
-  email?: string | null;
-}): Promise<{ response: string; sessionId?: string }> {
-  // 1️⃣ Token
-  const client = await auth.getClient();
-  const accessToken = await client.getAccessToken();
+  sessionId: string;
+  userName?: string | null;
+}): Promise<{ response: string }> {
+  const token = await getAccessToken();
 
-  if (!accessToken.token) {
-    throw new Error("Não foi possível obter access token");
-  }
+  const name = userName || phoneNumber;
+  const userId = `${name}|${phoneNumber}`;
 
-  // 2️⃣ Request body NO FORMATO OFICIAL
-  // Formata user_id como {phoneNumber}|{phoneNumber} seguindo padrão Python
-  const userId = `${phoneNumber}|${phoneNumber}`;
+  const url = `${apiEndpoint}/v1/${reasoningEngineId}:streamQuery`;
 
-  const body: any = {
+  const body = {
     classMethod: "stream_query",
     input: {
-      user_id: userId,
       message: text,
+      user_id: userId,
+      session_id: sessionId,
     },
   };
 
-  // Adiciona user_phone e email ao input explicitamente
-  if (phoneNumber) {
-    body.input.user_phone = phoneNumber;
-  }
-  if (email) {
-    body.input.email = email;
-  }
-
-  // 3️⃣ URL baseada na existência de sessionId
-  const url = sessionId
-    ? `${apiEndpoint}/v1/${agentEngineName}/sessions/${sessionId}:streamQuery`
-    : `${apiEndpoint}/v1/${agentEngineName}:streamQuery`;
-
-  // 4️⃣ Chamada STREAM
   const response = await axios.post(url, body, {
     headers: {
-      Authorization: `Bearer ${accessToken.token}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     responseType: "stream",
   });
 
-  // 5️⃣ Ler o stream
-  let fullResponse = "";
-  let buffer = "";
-  let capturedSessionId: string | undefined = undefined;
-
   return new Promise((resolve, reject) => {
+    let fullResponse = "";
+    let buffer = "";
+
     response.data.on("data", (chunk: Buffer) => {
       buffer += chunk.toString();
 
@@ -206,28 +187,14 @@ export async function generateAIResponse({
             ? JSON.parse(line.slice(6))
             : JSON.parse(line);
 
-          // Captura session_id se retornado na resposta
-          if (json.session && !capturedSessionId) {
-            const sessionName = json.session;
-            const sessionIdMatch = sessionName.match(/\/sessions\/([^\/]+)$/);
-            if (sessionIdMatch) {
-              capturedSessionId = sessionIdMatch[1];
-            }
-          }
-
-          // Formato padrão do Agent Engine
           if (json.content?.parts) {
             for (const part of json.content.parts) {
               if (part.text) {
                 fullResponse += part.text;
               }
             }
-          } else if (json.text) {
-            fullResponse += json.text;
           }
         } catch {
-          // fallback: texto puro
-          fullResponse += line;
         }
       }
     });
@@ -237,7 +204,6 @@ export async function generateAIResponse({
         response:
           fullResponse.trim() ||
           "Desculpe, não consegui gerar uma resposta agora.",
-        sessionId: capturedSessionId,
       });
     });
 
