@@ -1,7 +1,69 @@
 import { db } from "../firebase/firestore.js";
 import { publishProcessingJob } from "../pubsub/publisher.js";
 import { findOrCreateConversation } from "./conversation.service.js";
+import { sendWhatsAppMessage } from "./whatsapp.service.js";
+import { validateAndActivate } from "./gift-card.service.js";
 import crypto from "crypto";
+
+/** Normaliza telefone para consulta em orders (apenas dígitos; 10/11 dígitos → adiciona 55). */
+function normalizePhoneForQuery(raw: string): string {
+  const digits = String(raw).replace(/\D/g, "");
+  if (digits.length === 10 || digits.length === 11) {
+    return "55" + digits;
+  }
+  return digits;
+}
+
+/**
+ * Verifica se o número tem acesso ao agente (ao menos um pedido pago em orders).
+ */
+async function hasAccessToAgent(phoneNumber: string): Promise<boolean> {
+  const normalized = normalizePhoneForQuery(phoneNumber);
+  console.log("[hasAccessToAgent] phoneNumber:", phoneNumber, "| normalized:", normalized);
+
+  const byPhone = await db
+    .collection("orders")
+    .where("phoneNumber", "==", normalized)
+    .limit(1)
+    .get();
+  if (!byPhone.empty) {
+    console.log("[hasAccessToAgent] encontrado em orders (phoneNumber), acesso OK");
+    return true;
+  }
+
+  const byAlt = await db
+    .collection("orders")
+    .where("phoneNumberAlt", "==", normalized)
+    .limit(1)
+    .get();
+  const hasAccess = !byAlt.empty;
+  if (hasAccess) {
+    console.log("[hasAccessToAgent] encontrado em orders (phoneNumberAlt), acesso OK");
+  } else {
+    console.log("[hasAccessToAgent] nenhum order encontrado, acesso NEGADO");
+  }
+  return hasAccess;
+}
+
+
+// 
+// Alinhar o menu prinicpal aqui. Hoje o agente que fornece o menu principal
+// Esse fluxo não é o correto. O correto é o fluxo de compra e ativação de gift card.
+// seja por aqui e não pelo agente.
+//  O agente deve ser usado apenas para responder perguntas e fornecer informações.
+//
+const MESSAGE_NO_ACCESS =
+  "Para falar com o delegado, você precisa ter um jogo ativo.\n\n" +
+  "• *Comprar:* acesse nossa loja e adquira o jogo: link.sobinvestigacao.com/casos\n\n" +
+  "• *Já tem o jogo?* (ex.: recebeu de presente) Envie o código de ativação aqui no chat para ativar o gift card e liberar o acesso.";
+
+/** Considera mensagem como possível código de ativação (formato alfanumérico com hífens, 6–60 caracteres). */
+function looksLikeActivationCode(text: string | null): boolean {
+  if (!text || typeof text !== "string") return false;
+  const trimmed = text.trim();
+  if (trimmed.length < 6 || trimmed.length > 60) return false;
+  return /^[A-Za-z0-9\-]+$/.test(trimmed);
+}
 
 export async function handleWhatsappWebhook(payload: any) {
   const traceId = crypto.randomUUID();
@@ -39,6 +101,35 @@ export async function handleWhatsappWebhook(payload: any) {
     text,
     createdAt: new Date(),
   });
+
+  /**
+   * 🚫 Verifica se o usuário tem acesso ao agente (ao menos um pedido pago).
+   */
+  console.log("[handleWhatsappWebhook] verificando acesso ao agente para:", phoneNumber);
+  const hasAccess = await hasAccessToAgent(phoneNumber);
+  console.log("[handleWhatsappWebhook] hasAccess:", hasAccess);
+
+  if (!hasAccess) {
+    if (text && looksLikeActivationCode(text)) {
+      try {
+        const result = await validateAndActivate(phoneNumber, text);
+        await sendWhatsAppMessage({ to: phoneNumber, text: result.message });
+      } catch (err) {
+        console.error("Erro ao ativar gift card:", err);
+        await sendWhatsAppMessage({
+          to: phoneNumber,
+          text: "Ocorreu um erro ao ativar o código. Tente novamente mais tarde.",
+        });
+      }
+      return { ok: true };
+    }
+    try {
+      await sendWhatsAppMessage({ to: phoneNumber, text: MESSAGE_NO_ACCESS });
+    } catch (err) {
+      console.error("Erro ao enviar mensagem de sem acesso:", err);
+    }
+    return { ok: true };
+  }
 
   /**
    * 💬 Busca ou cria conversa ativa

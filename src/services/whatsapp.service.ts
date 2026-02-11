@@ -6,6 +6,11 @@ const WHATSAPP_PHONE_NUMBER_ID =
   process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
 
 
+console.log("[sendWhatsAppMessage] WHATSAPP_API_URL:", WHATSAPP_API_URL);
+console.log("[sendWhatsAppMessage] WHATSAPP_ACCESS_TOKEN:", WHATSAPP_ACCESS_TOKEN);
+console.log("[sendWhatsAppMessage] WHATSAPP_PHONE_NUMBER_ID:", WHATSAPP_PHONE_NUMBER_ID);
+
+
 export async function sendWhatsAppMessage({
   to,
   text,
