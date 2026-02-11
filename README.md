@@ -25,15 +25,36 @@ npm install
 
 ## ⚙️ Configuração
 
-Este projeto utiliza o Firebase. Para que ele funcione corretamente, você precisa configurar as credenciais do Google Cloud.
+### Variáveis de ambiente
 
-Defina a variável de ambiente `GOOGLE_APPLICATION_CREDENTIALS` apontando para o seu arquivo JSON de chave de conta de serviço:
+Copie o arquivo `.env.example` para `.env` e preencha os valores. Em produção (Cloud Run, etc.), defina as variáveis no ambiente de deploy.
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `GOOGLE_APPLICATION_CREDENTIALS` | Sim (local) | Caminho para o JSON da conta de serviço GCP. Em produção use Application Default Credentials. |
+| `WHATSAPP_API_URL` | Sim | URL base da API do WhatsApp (ex.: `https://graph.facebook.com/v18.0`). |
+| `WHATSAPP_ACCESS_TOKEN` | Sim | Token de acesso do app Meta (WhatsApp Business API). |
+| `WHATSAPP_PHONE_NUMBER_ID` | Sim | ID do número de telefone do WhatsApp Business. |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | Sim | Token usado na verificação do webhook (GET) pelo Meta. |
+| `VERTEX_AI_PROJECT_NUMBER` | Sim (worker) | Número do projeto GCP (apenas dígitos). |
+| `VERTEX_AI_LOCATION` | Sim (worker) | Região do Vertex AI (ex.: `us-central1`). |
+| `VERTEX_AI_AGENT_ENGINE_ID` | Sim (worker) | ID do Reasoning Engine / agente no Vertex AI. |
+| `PORT` | Não | Porta HTTP (default: `8080`). |
+| `INTERNAL_TOKEN` | Não | Token para proteção de rotas internas (middleware auth). |
+| `GCP_PROJECT` | Não | ID do projeto GCP (opcional; pode ser inferido pela credencial). |
+
+**Pub/Sub:** o tópico `sob-processing-jobs` deve existir no projeto. As credenciais são as mesmas do Firebase (ADC ou `GOOGLE_APPLICATION_CREDENTIALS`).
+
+**Exemplo (desenvolvimento local):**
 
 ```bash
+cp .env.example .env
+# Edite .env com seus valores.
+
 export GOOGLE_APPLICATION_CREDENTIALS="/caminho/para/seu/arquivo-de-servico.json"
 ```
 
-No ambiente de produção ou via Docker, certifique-se de que o ambiente tenha as permissões necessárias para acessar o Firestore.
+No ambiente de produção ou via Docker, certifique-se de que o ambiente tenha as permissões necessárias para acessar o Firestore e o Pub/Sub.
 
 ## 🏃 Como Rodar
 
