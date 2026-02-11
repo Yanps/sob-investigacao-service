@@ -3,6 +3,7 @@ import { publishProcessingJob } from "../pubsub/publisher.js";
 import { findOrCreateConversation } from "./conversation.service.js";
 import { sendWhatsAppMessage } from "./whatsapp.service.js";
 import { validateAndActivate } from "./gift-card.service.js";
+import { saveUserMessage } from "./saveMessage.js";
 import crypto from "crypto";
 
 /** Normaliza telefone para consulta em orders (apenas dígitos; 10/11 dígitos → adiciona 55). */
@@ -132,9 +133,36 @@ export async function handleWhatsappWebhook(payload: any) {
   }
 
   /**
+   * 🔁 Idempotência: evita processar a mesma mensagem duas vezes (reenvio do WhatsApp).
+   */
+  const existingJob = await db
+    .collection("processing_jobs")
+    .where("messageId", "==", messageId)
+    .limit(1)
+    .get();
+  if (!existingJob.empty) {
+    console.log("[handleWhatsappWebhook] mensagem já processada (idempotente):", messageId);
+    return { ok: true };
+  }
+
+  /**
    * 💬 Busca ou cria conversa ativa
    */
   const conversation = await findOrCreateConversation(phoneNumber);
+
+  /**
+   * 📝 Persiste mensagem do usuário no histórico da conversa
+   */
+  try {
+    await saveUserMessage({
+      conversationId: conversation.conversationId,
+      messageId,
+      text,
+      phoneNumber,
+    });
+  } catch (err) {
+    console.error("Erro ao salvar mensagem do usuário (histórico):", err);
+  }
 
   /**
    * 🧠 Cria job de processamento
