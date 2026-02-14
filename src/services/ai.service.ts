@@ -194,20 +194,58 @@ export async function generateAIResponse({
               }
             }
           }
-        } catch {
+
+          // Log se houver erro na resposta da API
+          if (json.error) {
+            console.error("[AI_SERVICE_API_ERROR] Erro retornado pela API", {
+              sessionId,
+              phoneNumber,
+              error: json.error,
+            });
+          }
+        } catch (parseError) {
+          console.warn("[AI_SERVICE_PARSE_WARNING] Falha ao parsear linha do stream", {
+            sessionId,
+            line: line.substring(0, 500),
+            error: String(parseError),
+          });
         }
       }
     });
 
     response.data.on("end", () => {
+      const trimmedResponse = fullResponse.trim();
+
+      if (!trimmedResponse) {
+        console.error("[AI_SERVICE_EMPTY_RESPONSE] Resposta vazia do Vertex AI", {
+          sessionId,
+          phoneNumber,
+          userId,
+          inputText: text,
+          fullResponseRaw: fullResponse,
+          bufferRemaining: buffer,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        console.log("[AI_SERVICE_SUCCESS] Resposta gerada com sucesso", {
+          sessionId,
+          phoneNumber,
+          responseLength: trimmedResponse.length,
+        });
+      }
+
       resolve({
-        response:
-          fullResponse.trim() ||
-          "Desculpe, não consegui gerar uma resposta agora.",
+        response: trimmedResponse || "Desculpe, não consegui gerar uma resposta agora.",
       });
     });
 
     response.data.on("error", (err: any) => {
+      console.error("[AI_SERVICE_STREAM_ERROR] Erro no stream do Vertex AI", {
+        sessionId,
+        phoneNumber,
+        error: err.message || err,
+        stack: err.stack,
+      });
       reject(err);
     });
   });
