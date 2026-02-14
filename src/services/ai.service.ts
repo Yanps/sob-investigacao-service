@@ -87,10 +87,10 @@ export async function getUserName(phoneNumber: string): Promise<string> {
       }
     }
 
-    return phoneNumber;
+    return "Investigador";
   } catch (error) {
     console.error("Erro ao buscar nome do usuário:", error);
-    return phoneNumber;
+    return "Investigador";
   }
 }
 
