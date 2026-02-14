@@ -134,16 +134,54 @@ export async function createVertexAISession(
   return sessionId;
 }
 
+/**
+ * Busca o timestamp da última mensagem do usuário em uma conversa.
+ * Retorna null se não houver mensagens anteriores.
+ */
+export async function getLastMessageTimestamp(
+  conversationId: string
+): Promise<string | null> {
+  try {
+    const messagesSnapshot = await db
+      .collection("conversations")
+      .doc(conversationId)
+      .collection("messages")
+      .where("from", "==", "user")
+      .orderBy("createdAt", "desc")
+      .limit(2)
+      .get();
+
+    if (messagesSnapshot.docs.length < 2) {
+      return null;
+    }
+
+    const previousMessage = messagesSnapshot.docs[1];
+    const data = previousMessage.data();
+    const createdAt = data.createdAt;
+
+    if (createdAt && createdAt.toDate) {
+      return createdAt.toDate().toISOString();
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Erro ao buscar timestamp da última mensagem:", error);
+    return null;
+  }
+}
+
 export async function generateAIResponse({
   phoneNumber,
   text,
   sessionId,
   userName,
+  lastMessageTimestamp,
 }: {
   phoneNumber: string;
   text: string;
   sessionId: string;
   userName?: string | null;
+  lastMessageTimestamp?: string | null;
 }): Promise<{ response: string }> {
   const token = await getAccessToken();
 
@@ -158,6 +196,7 @@ export async function generateAIResponse({
       message: text,
       user_id: userId,
       session_id: sessionId,
+      ...(lastMessageTimestamp && { last_message_timestamp: lastMessageTimestamp }),
     },
   };
 

@@ -6,6 +6,7 @@ import {
   generateAIResponse,
   createVertexAISession,
   getUserName,
+  getLastMessageTimestamp,
 } from "../services/ai.service.js";
 import {
   findOrCreateConversation,
@@ -84,6 +85,11 @@ app.post("/", async (req, res) => {
 
     try {
       const userName = await getUserName(phoneNumber);
+      const lastMessageTimestamp = await getLastMessageTimestamp(conversationId);
+
+      if (lastMessageTimestamp) {
+        console.log("[WORKER] Timestamp da última mensagem:", lastMessageTimestamp);
+      }
 
       if (!sessionId) {
         console.log("Criando nova sessão Vertex AI...");
@@ -99,6 +105,7 @@ app.post("/", async (req, res) => {
         text: jobData.text,
         sessionId,
         userName,
+        lastMessageTimestamp,
       });
 
       // Se a resposta for vazia (sessão corrompida/expirada), criar nova sessão e tentar novamente
@@ -115,6 +122,7 @@ app.post("/", async (req, res) => {
           text: jobData.text,
           sessionId,
           userName,
+          lastMessageTimestamp,
         });
         console.log("[WORKER] Retry com nova sessão concluído");
       }
