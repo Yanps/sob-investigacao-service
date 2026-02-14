@@ -94,12 +94,30 @@ app.post("/", async (req, res) => {
         console.log("Sessão criada e salva:", sessionId);
       }
 
-      const aiResult = await generateAIResponse({
+      let aiResult = await generateAIResponse({
         phoneNumber,
         text: jobData.text,
         sessionId,
         userName,
       });
+
+      // Se a resposta for vazia (sessão corrompida/expirada), criar nova sessão e tentar novamente
+      if (!aiResult.response || aiResult.response === "Desculpe, não consegui gerar uma resposta agora.") {
+        console.log("[WORKER] Resposta vazia detectada, criando nova sessão...");
+
+        sessionId = await createVertexAISession(phoneNumber, userName);
+        await updateConversationSessionId(conversationId, sessionId);
+        await jobRef.update({ sessionId });
+        console.log("[WORKER] Nova sessão criada:", sessionId);
+
+        aiResult = await generateAIResponse({
+          phoneNumber,
+          text: jobData.text,
+          sessionId,
+          userName,
+        });
+        console.log("[WORKER] Retry com nova sessão concluído");
+      }
 
       const responseText = aiResult.response;
 

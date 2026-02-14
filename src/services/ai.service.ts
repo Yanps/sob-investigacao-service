@@ -161,6 +161,13 @@ export async function generateAIResponse({
     },
   };
 
+  console.log("[AI_SERVICE_REQUEST] Enviando request para Vertex AI", {
+    sessionId,
+    phoneNumber,
+    textLength: text.length,
+    url,
+  });
+
   const response = await axios.post(url, body, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -169,12 +176,27 @@ export async function generateAIResponse({
     responseType: "stream",
   });
 
+  console.log("[AI_SERVICE_RESPONSE] Response recebido", {
+    sessionId,
+    status: response.status,
+    headers: response.headers,
+  });
+
   return new Promise((resolve, reject) => {
     let fullResponse = "";
     let buffer = "";
+    let chunkCount = 0;
 
     response.data.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString();
+      chunkCount++;
+      const chunkStr = chunk.toString();
+      console.log("[AI_SERVICE_CHUNK]", {
+        sessionId,
+        chunkCount,
+        chunkLength: chunkStr.length,
+        chunkPreview: chunkStr.substring(0, 300),
+      });
+      buffer += chunkStr;
 
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
