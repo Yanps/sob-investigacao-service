@@ -164,16 +164,26 @@ export async function getVertexAISessionState(
       },
     });
 
-    const raw = response.data?.sessionState as Record<string, unknown> | undefined;
-    if (!raw || typeof raw !== "object") return null;
+    const data = response.data as Record<string, unknown> | undefined;
+    console.log("[getVertexAISessionState] raw response keys", data ? Object.keys(data) : []);
+    const sessionStateRaw = data?.sessionState;
+    console.log("[getVertexAISessionState] sessionState sample", sessionStateRaw != null ? JSON.stringify(sessionStateRaw).slice(0, 800) : "null/undefined");
 
-    return {
+    const raw = sessionStateRaw as Record<string, unknown> | undefined;
+    if (!raw || typeof raw !== "object") {
+      console.log("[getVertexAISessionState] sessionState vazio ou não é objeto, retornando null");
+      return null;
+    }
+
+    const result = {
       jogo: raw.jogo as string | null | undefined,
       fase: raw.fase as number | null | undefined,
       jogo_concluido: raw.jogo_concluido as boolean | null | undefined,
       nome_usuario: raw.nome_usuario as string | null | undefined,
       user_phone: raw.user_phone as string | null | undefined,
     };
+    console.log("[getVertexAISessionState] extraído", { sessionId, jogo: result.jogo, fase: result.fase, jogo_concluido: result.jogo_concluido });
+    return result;
   } catch (err: unknown) {
     const status = (err as { response?: { status?: number } })?.response?.status;
     if (status === 404) {
@@ -190,13 +200,11 @@ export async function generateAIResponse({
   text,
   sessionId,
   userName,
-  lastMessageTimestamp,
 }: {
   phoneNumber: string;
   text: string;
   sessionId: string;
   userName?: string | null;
-  lastMessageTimestamp?: string | null;
 }): Promise<{ response: string }> {
   const token = await getAccessToken();
 
@@ -211,7 +219,6 @@ export async function generateAIResponse({
       message: text,
       user_id: userId,
       session_id: sessionId,
-      ...(lastMessageTimestamp && { last_message_timestamp: lastMessageTimestamp }),
     },
   };
 
@@ -249,7 +256,6 @@ export async function generateAIResponse({
             }
           }
 
-          // Log se houver erro na resposta da API
           if (json.error) {
             console.error("[AI_SERVICE_API_ERROR] Erro retornado pela API", {
               sessionId,
@@ -257,17 +263,29 @@ export async function generateAIResponse({
               error: json.error,
             });
           }
-        } catch (parseError) {
-          console.warn("[AI_SERVICE_PARSE_WARNING] Falha ao parsear linha do stream", {
-            sessionId,
-            line: line.substring(0, 500),
-            error: String(parseError),
-          });
+        } catch {
+          // Linha incompleta ou não-JSON; ignora
         }
       }
     });
 
     response.data.on("end", () => {
+      // Último fragmento que pode ter ficado no buffer
+      if (buffer.trim()) {
+        try {
+          const json = buffer.startsWith("data: ")
+            ? JSON.parse(buffer.slice(6))
+            : JSON.parse(buffer);
+          if (json.content?.parts) {
+            for (const part of json.content.parts) {
+              if (part.text) fullResponse += part.text;
+            }
+          }
+        } catch {
+          // ignora
+        }
+      }
+
       const trimmedResponse = fullResponse.trim();
 
       if (!trimmedResponse) {
@@ -275,16 +293,8 @@ export async function generateAIResponse({
           sessionId,
           phoneNumber,
           userId,
-          inputText: text,
-          fullResponseRaw: fullResponse,
-          bufferRemaining: buffer,
+          inputText: text?.substring(0, 200),
           timestamp: new Date().toISOString(),
-        });
-      } else {
-        console.log("[AI_SERVICE_SUCCESS] Resposta gerada com sucesso", {
-          sessionId,
-          phoneNumber,
-          responseLength: trimmedResponse.length,
         });
       }
 
