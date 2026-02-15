@@ -134,6 +134,57 @@ export async function createVertexAISession(
   return sessionId;
 }
 
+/** Estado da sessão do agente ADK (chaves usadas no callback_context.state). */
+export interface VertexSessionState {
+  jogo?: string | null;
+  fase?: number | null;
+  jogo_concluido?: boolean | null;
+  nome_usuario?: string | null;
+  user_phone?: string | null;
+}
+
+/**
+ * Obtém o estado da sessão no Vertex AI Agent Engine (sessions.get).
+ * Usado para persistir gameId, fase, gameCompleted, userName em agent_responses.
+ */
+export async function getVertexAISessionState(
+  sessionId: string
+): Promise<VertexSessionState | null> {
+  try {
+    const token = await getAccessToken();
+    const sessionName = `${reasoningEngineId}/sessions/${sessionId}`;
+    const url = `${apiEndpoint}/v1beta1/${sessionName}`;
+
+    const response = await axios.get<{
+      sessionState?: Record<string, unknown>;
+    }>(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const raw = response.data?.sessionState as Record<string, unknown> | undefined;
+    if (!raw || typeof raw !== "object") return null;
+
+    return {
+      jogo: raw.jogo as string | null | undefined,
+      fase: raw.fase as number | null | undefined,
+      jogo_concluido: raw.jogo_concluido as boolean | null | undefined,
+      nome_usuario: raw.nome_usuario as string | null | undefined,
+      user_phone: raw.user_phone as string | null | undefined,
+    };
+  } catch (err: unknown) {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    if (status === 404) {
+      console.warn("[getVertexAISessionState] Sessão não encontrada:", sessionId);
+      return null;
+    }
+    console.error("[getVertexAISessionState] Erro ao obter estado da sessão:", err);
+    return null;
+  }
+}
+
 export async function generateAIResponse({
   phoneNumber,
   text,

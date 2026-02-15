@@ -1,8 +1,6 @@
 import { db } from "../firebase/firestore.js";
 import { publishProcessingJob } from "../pubsub/publisher.js";
 import { findOrCreateConversation } from "./conversation.service.js";
-import { sendWhatsAppMessage } from "./whatsapp.service.js";
-import { validateAndActivate } from "./gift-card.service.js";
 import { saveUserMessage } from "./saveMessage.js";
 import crypto from "crypto";
 /** Normaliza telefone para consulta em orders (apenas dígitos; 10/11 dígitos → adiciona 55). */
@@ -91,35 +89,35 @@ export async function handleWhatsappWebhook(payload) {
         text,
         createdAt: new Date(),
     });
-    /**
+    /*
      * 🚫 Verifica se o usuário tem acesso ao agente (ao menos um pedido pago).
-     */
+     * Desativado: todas as mensagens são delegadas ao agente.
     console.log("[handleWhatsappWebhook] verificando acesso ao agente para:", phoneNumber);
     const hasAccess = await hasAccessToAgent(phoneNumber);
     console.log("[handleWhatsappWebhook] hasAccess:", hasAccess);
+  
     if (!hasAccess) {
-        if (text && looksLikeActivationCode(text)) {
-            try {
-                const result = await validateAndActivate(phoneNumber, text);
-                await sendWhatsAppMessage({ to: phoneNumber, text: result.message });
-            }
-            catch (err) {
-                console.error("Erro ao ativar gift card:", err);
-                await sendWhatsAppMessage({
-                    to: phoneNumber,
-                    text: "Ocorreu um erro ao ativar o código. Tente novamente mais tarde.",
-                });
-            }
-            return { ok: true };
-        }
+      if (text && looksLikeActivationCode(text)) {
         try {
-            await sendWhatsAppMessage({ to: phoneNumber, text: MESSAGE_NO_ACCESS });
-        }
-        catch (err) {
-            console.error("Erro ao enviar mensagem de sem acesso:", err);
+          const result = await validateAndActivate(phoneNumber, text);
+          await sendWhatsAppMessage({ to: phoneNumber, text: result.message });
+        } catch (err) {
+          console.error("Erro ao ativar gift card:", err);
+          await sendWhatsAppMessage({
+            to: phoneNumber,
+            text: "Ocorreu um erro ao ativar o código. Tente novamente mais tarde.",
+          });
         }
         return { ok: true };
+      }
+      try {
+        await sendWhatsAppMessage({ to: phoneNumber, text: MESSAGE_NO_ACCESS });
+      } catch (err) {
+        console.error("Erro ao enviar mensagem de sem acesso:", err);
+      }
+      return { ok: true };
     }
+    */
     /**
      * 🔁 Idempotência: evita processar a mesma mensagem duas vezes (reenvio do WhatsApp).
      */

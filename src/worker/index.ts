@@ -6,6 +6,7 @@ import {
   generateAIResponse,
   createVertexAISession,
   getUserName,
+  getVertexAISessionState,
 } from "../services/ai.service.js";
 import {
   findOrCreateConversation,
@@ -108,6 +109,9 @@ app.post("/", async (req, res) => {
         text: responseText,
       });
 
+      const sessionState = await getVertexAISessionState(sessionId);
+      const userNameFromState = sessionState?.nome_usuario ?? userName;
+
       await db.collection("agent_responses").add({
         traceId,
         phoneNumber,
@@ -115,6 +119,11 @@ app.post("/", async (req, res) => {
         response: { text: responseText },
         createdAt: new Date(),
         source: "vertex-ai",
+        sessionId,
+        gameId: sessionState?.jogo ?? null,
+        phaseId: sessionState?.fase ?? null,
+        gameCompleted: sessionState?.jogo_concluido ?? false,
+        userName: userNameFromState ?? null,
       });
 
       await updateConversationLastMessage(conversationId);
