@@ -165,13 +165,9 @@ export async function getVertexAISessionState(
     });
 
     const data = response.data as Record<string, unknown> | undefined;
-    console.log("[getVertexAISessionState] raw response keys", data ? Object.keys(data) : []);
     const sessionStateRaw = data?.sessionState;
-    console.log("[getVertexAISessionState] sessionState sample", sessionStateRaw != null ? JSON.stringify(sessionStateRaw).slice(0, 800) : "null/undefined");
-
     const raw = sessionStateRaw as Record<string, unknown> | undefined;
     if (!raw || typeof raw !== "object") {
-      console.log("[getVertexAISessionState] sessionState vazio ou não é objeto, retornando null");
       return null;
     }
 
@@ -182,7 +178,14 @@ export async function getVertexAISessionState(
       nome_usuario: raw.nome_usuario as string | null | undefined,
       user_phone: raw.user_phone as string | null | undefined,
     };
-    console.log("[getVertexAISessionState] extraído", { sessionId, jogo: result.jogo, fase: result.fase, jogo_concluido: result.jogo_concluido });
+
+    const isNotMenu = (result.jogo != null && result.jogo !== "") || (result.fase != null && Number(result.fase) > 0);
+    if (isNotMenu) {
+      console.log("[getVertexAISessionState] raw response keys", data ? Object.keys(data) : []);
+      console.log("[getVertexAISessionState] sessionState sample", sessionStateRaw != null ? JSON.stringify(sessionStateRaw).slice(0, 800) : "null/undefined");
+      console.log("[getVertexAISessionState] extraído", { sessionId, jogo: result.jogo, fase: result.fase, jogo_concluido: result.jogo_concluido });
+    }
+
     return result;
   } catch (err: unknown) {
     const status = (err as { response?: { status?: number } })?.response?.status;

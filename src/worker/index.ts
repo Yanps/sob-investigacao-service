@@ -13,6 +13,7 @@ import {
   updateConversationSessionId,
   updateConversationLastMessage,
 } from "../services/conversation.service.js";
+import { hasOffense, hasDesistencia } from "../services/contentCheck.service.js";
 
 const app = express();
 app.use(express.json());
@@ -112,6 +113,9 @@ app.post("/", async (req, res) => {
       const sessionState = await getVertexAISessionState(sessionId);
       const userNameFromState = sessionState?.nome_usuario ?? userName;
 
+      const hasOffenseFlag = hasOffense(jobData.text) || hasOffense(responseText);
+      const hasDesistenciaFlag = hasDesistencia(jobData.text, responseText);
+
       await db.collection("agent_responses").add({
         traceId,
         phoneNumber,
@@ -124,6 +128,8 @@ app.post("/", async (req, res) => {
         phaseId: sessionState?.fase ?? null,
         gameCompleted: sessionState?.jogo_concluido ?? false,
         userName: userNameFromState ?? null,
+        hasOffense: hasOffenseFlag,
+        hasDesistencia: hasDesistenciaFlag,
       });
 
       await updateConversationLastMessage(conversationId);
