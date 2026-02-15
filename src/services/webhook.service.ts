@@ -20,11 +20,12 @@ function normalizePhoneForQuery(raw: string): string {
  */
 async function hasAccessToAgent(phoneNumber: string): Promise<boolean> {
   const normalized = normalizePhoneForQuery(phoneNumber);
-  console.log("[hasAccessToAgent] phoneNumber:", phoneNumber, "| normalized:", normalized);
+  const normalizedNumber = Number(normalized);
+  console.log("[hasAccessToAgent] phoneNumber:", phoneNumber, "| normalized:", normalized, "| normalizedNumber:", normalizedNumber);
 
   const byPhone = await db
     .collection("orders")
-    .where("phoneNumber", "==", normalized)
+    .where("phoneNumber", "==", normalizedNumber)
     .limit(1)
     .get();
   if (!byPhone.empty) {
@@ -34,7 +35,7 @@ async function hasAccessToAgent(phoneNumber: string): Promise<boolean> {
 
   const byAlt = await db
     .collection("orders")
-    .where("phoneNumberAlt", "==", normalized)
+    .where("phoneNumberAlt", "==", normalizedNumber)
     .limit(1)
     .get();
   const hasAccess = !byAlt.empty;
