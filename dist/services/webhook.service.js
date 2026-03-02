@@ -1,7 +1,6 @@
 import { db } from "../firebase/firestore.js";
 import { publishProcessingJob } from "../pubsub/publisher.js";
 import { findOrCreateConversation } from "./conversation.service.js";
-import { sendWhatsAppMessage } from "./whatsapp.service.js";
 import { markMessageAsRead, sendTypingIndicator } from "./whatsapp-status.service.js";
 import { saveUserMessage } from "./saveMessage.js";
 import crypto from "crypto";
@@ -121,7 +120,7 @@ export async function handleWhatsappWebhook(payload) {
     console.log("[handleWhatsappWebhook] verificando acesso ao agente para:", phoneNumber);
     const hasAccess = await hasAccessToAgent(phoneNumber);
     console.log("[handleWhatsappWebhook] hasAccess:", hasAccess);
-
+  
     if (!hasAccess) {
       if (text && looksLikeActivationCode(text)) {
         try {
