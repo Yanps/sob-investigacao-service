@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add src/services/webhook.service.ts dist/services/webhook.service.js)",
+      "Bash(git commit -m \"Resolve merge conflicts in webhook service\")",
+      "Bash(git add src/services/webhook.service.ts)",
+      "Bash(git reset HEAD dist/services/webhook.service.js)",
+      "Bash(git checkout -- dist/services/webhook.service.js)"
+    ]
+  }
+}
