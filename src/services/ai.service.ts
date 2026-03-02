@@ -209,12 +209,13 @@ export async function generateAIResponse({
   sessionId: string;
   userName?: string | null;
 }): Promise<{ response: string }> {
-  const token = await getAccessToken();
+  try {
+    const token = await getAccessToken();
 
-  const name = userName || phoneNumber;
-  const userId = `${name}|${phoneNumber}`;
+    const name = userName || phoneNumber;
+    const userId = `${name}|${phoneNumber}`;
 
-  const url = `${apiEndpoint}/v1/${reasoningEngineId}:streamQuery`;
+    const url = `${apiEndpoint}/v1/${reasoningEngineId}:streamQuery`;
 
   const body = {
     classMethod: "stream_query",
@@ -225,15 +226,23 @@ export async function generateAIResponse({
     },
   };
 
-  const response = await axios.post(url, body, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    responseType: "stream",
-  });
+    const response = await axios.post(url, body, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      responseType: "stream",
+    });
 
-  return new Promise((resolve, reject) => {
+    console.log("[AI_SERVICE_REQUEST] Requisição enviada ao Vertex AI", {
+      sessionId,
+      phoneNumber,
+      userId,
+      textLength: text.length,
+      statusCode: response.status,
+    });
+
+    return new Promise((resolve, reject) => {
     let fullResponse = "";
     let buffer = "";
 
@@ -297,6 +306,15 @@ export async function generateAIResponse({
           phoneNumber,
           userId,
           inputText: text?.substring(0, 200),
+          fullResponseLength: fullResponse.length,
+          statusCode: response.status,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        console.log("[AI_SERVICE_SUCCESS] Resposta gerada com sucesso", {
+          sessionId,
+          phoneNumber,
+          responseLength: trimmedResponse.length,
           timestamp: new Date().toISOString(),
         });
       }
@@ -312,8 +330,20 @@ export async function generateAIResponse({
         phoneNumber,
         error: err.message || err,
         stack: err.stack,
+        statusCode: err.statusCode || err.status,
+        responseStatus: response.status,
       });
       reject(err);
     });
-  });
+    });
+  } catch (error) {
+    console.error("[AI_SERVICE_REQUEST_ERROR] Erro ao fazer requisição ao Vertex AI", {
+      sessionId,
+      phoneNumber,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString(),
+    });
+    throw error;
+  }
 }
