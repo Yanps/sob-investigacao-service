@@ -2,6 +2,7 @@ import { db } from "../firebase/firestore.js";
 import { publishProcessingJob } from "../pubsub/publisher.js";
 import { findOrCreateConversation } from "./conversation.service.js";
 import { sendWhatsAppMessage } from "./whatsapp.service.js";
+import { markMessageAsRead, sendTypingIndicator } from "./whatsapp-status.service.js";
 import { validateAndActivate } from "./gift-card.service.js";
 import { saveUserMessage } from "./saveMessage.js";
 import crypto from "crypto";
@@ -103,6 +104,31 @@ export async function handleWhatsappWebhook(payload: any) {
     text,
     createdAt: new Date(),
   });
+
+  /**
+   * ✅ Marca mensagem como "visualizado" (dois checks azuis)
+   * Envia imediatamente, sem aguardar resposta (fire and forget)
+   */
+  if (messageId) {
+    markMessageAsRead(messageId).catch((error) => {
+      console.error("[handleWhatsappWebhook] Erro ao marcar como lida:", {
+        messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+    /**
+     * 🔤 Envia indicador de digitação (typing indicator)
+     * Mostra "digitando..." para o cliente enquanto processa a mensagem
+     * O indicador é desativado automaticamente após 25s ou ao enviar resposta
+     */
+    sendTypingIndicator(messageId).catch((error) => {
+      console.error("[handleWhatsappWebhook] Erro ao enviar typing indicator:", {
+        messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
 
   /**
    * 🚫 Verifica se o usuário tem acesso ao agente (ao menos um pedido pago).
