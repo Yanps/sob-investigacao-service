@@ -116,3 +116,16 @@ export async function updateConversationLastMessage(
     lastMessageAt: new Date(),
   });
 }
+
+/**
+ * Retorna o lastMessageAt da conversa em formato ISO string (para uso na API do agente).
+ */
+export async function getLastMessageTimestamp(
+  conversationId: string
+): Promise<string | null> {
+  const doc = await db.collection("conversations").doc(conversationId).get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  const lastMessageAt = data?.lastMessageAt?.toDate?.();
+  return lastMessageAt ? lastMessageAt.toISOString() : null;
+}

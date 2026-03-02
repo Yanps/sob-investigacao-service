@@ -6,13 +6,14 @@ import {
   generateAIResponse,
   createVertexAISession,
   getUserName,
-  getLastMessageTimestamp,
+  getVertexAISessionState,
 } from "../services/ai.service.js";
 import {
   findOrCreateConversation,
   updateConversationSessionId,
   updateConversationLastMessage,
 } from "../services/conversation.service.js";
+import { hasOffense, hasDesistencia } from "../services/contentCheck.service.js";
 
 const app = express();
 app.use(express.json());
@@ -85,11 +86,6 @@ app.post("/", async (req, res) => {
 
     try {
       const userName = await getUserName(phoneNumber);
-      const lastMessageTimestamp = await getLastMessageTimestamp(conversationId);
-
-      if (lastMessageTimestamp) {
-        console.log("[WORKER] Timestamp da última mensagem:", lastMessageTimestamp);
-      }
 
       if (!sessionId) {
         console.log("Criando nova sessão Vertex AI...");
@@ -100,32 +96,12 @@ app.post("/", async (req, res) => {
         console.log("Sessão criada e salva:", sessionId);
       }
 
-      let aiResult = await generateAIResponse({
+      const aiResult = await generateAIResponse({
         phoneNumber,
         text: jobData.text,
         sessionId,
         userName,
-        lastMessageTimestamp,
       });
-
-      // Se a resposta for vazia (sessão corrompida/expirada), criar nova sessão e tentar novamente
-      if (!aiResult.response || aiResult.response === "Desculpe, não consegui gerar uma resposta agora.") {
-        console.log("[WORKER] Resposta vazia detectada, criando nova sessão...");
-
-        sessionId = await createVertexAISession(phoneNumber, userName);
-        await updateConversationSessionId(conversationId, sessionId);
-        await jobRef.update({ sessionId });
-        console.log("[WORKER] Nova sessão criada:", sessionId);
-
-        aiResult = await generateAIResponse({
-          phoneNumber,
-          text: jobData.text,
-          sessionId,
-          userName,
-          lastMessageTimestamp,
-        });
-        console.log("[WORKER] Retry com nova sessão concluído");
-      }
 
       const responseText = aiResult.response;
 
@@ -134,6 +110,12 @@ app.post("/", async (req, res) => {
         text: responseText,
       });
 
+      const sessionState = await getVertexAISessionState(sessionId);
+      const userNameFromState = sessionState?.nome_usuario ?? userName;
+
+      const hasOffenseFlag = hasOffense(jobData.text) || hasOffense(responseText);
+      const hasDesistenciaFlag = hasDesistencia(jobData.text, responseText);
+
       await db.collection("agent_responses").add({
         traceId,
         phoneNumber,
@@ -141,6 +123,13 @@ app.post("/", async (req, res) => {
         response: { text: responseText },
         createdAt: new Date(),
         source: "vertex-ai",
+        sessionId,
+        gameId: sessionState?.jogo ?? null,
+        phaseId: sessionState?.fase ?? null,
+        gameCompleted: sessionState?.jogo_concluido ?? false,
+        userName: userNameFromState ?? null,
+        hasOffense: hasOffenseFlag,
+        hasDesistencia: hasDesistenciaFlag,
       });
 
       await updateConversationLastMessage(conversationId);
